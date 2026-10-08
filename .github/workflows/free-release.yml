@@ -65,7 +65,7 @@ jobs:
           tag="free-v${{ steps.version.outputs.version }}"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release $tag already exists; nothing to publish."
+            echo "Release $tag already exists; skipping duplicate publication."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -76,6 +76,7 @@ jobs:
 
       - name: Publish GitHub Release
         if: steps.tag.outputs.exists != 'true'
+        uses: ncipollo/release-action@v1
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
