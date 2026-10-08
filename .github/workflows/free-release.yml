@@ -57,26 +57,25 @@ jobs:
           version="$(node -p 'require("./plugin.json").version')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Create or verify release tag
+      - name: Create release tag
+        id: tag
         shell: bash
         run: |
           set -euo pipefail
           tag="free-v${{ steps.version.outputs.version }}"
-          current="$(git rev-parse HEAD)"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
-            tagged="$(git rev-list -n 1 "refs/tags/$tag")"
-            if [ "$tagged" != "$current" ]; then
-              echo "Release tag $tag already points to $tagged, not $current." >&2
-              exit 1
-            fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $tag already exists; nothing to publish."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$tag" -m "$tag"
             git push origin "$tag"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Publish GitHub Release
+        if: steps.tag.outputs.exists != 'true'
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
