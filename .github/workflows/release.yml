@@ -16,6 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Install pnpm
@@ -49,7 +50,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="v${{ steps.version.outputs.version }}"
+          tag="free-v${{ steps.version.outputs.version }}"
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release tag $tag already exists."
@@ -75,4 +76,4 @@ jobs:
           artifacts: "package.zip"
           token: ${{ secrets.GITHUB_TOKEN }}
           prerelease: false
-          tag: v${{ steps.version.outputs.version }}
+          tag: free-v${{ steps.version.outputs.version }}
