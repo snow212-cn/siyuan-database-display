@@ -31,22 +31,35 @@ jobs:
           git remote add upstream https://github.com/loonghfut/siyuan-database-display.git
           git fetch --prune upstream main
 
-      - name: Merge upstream
+      - name: Sync upstream tree
+        shell: bash
         run: |
           set -euo pipefail
-          git merge --no-edit -X theirs upstream/main
+          upstream_sha="$(git rev-parse upstream/main)"
+          if git merge-base --is-ancestor "$upstream_sha" HEAD; then
+            echo "Upstream is already included."
+            exit 0
+          fi
 
-      - name: Reapply free edition policy
-        run: |
-          set -euo pipefail
+          backup="$(mktemp -d)"
+          mkdir -p "$backup/.github/workflows" "$backup/scripts"
+          cp .github/workflows/sync-upstream.yml "$backup/.github/workflows/"
+          cp .github/workflows/free-release.yml "$backup/.github/workflows/"
+          cp scripts/ensure-free-edition.mjs "$backup/scripts/"
+
+          git merge --no-ff --no-edit --no-commit -s ours upstream/main
+          git checkout upstream/main -- .
+
+          mkdir -p .github/workflows scripts
+          cp "$backup/.github/workflows/sync-upstream.yml" .github/workflows/
+          cp "$backup/.github/workflows/free-release.yml" .github/workflows/
+          cp "$backup/scripts/ensure-free-edition.mjs" scripts/
+
           node scripts/ensure-free-edition.mjs
-          if [ -f .github/workflows/release.yml ]; then
-            git rm -f .github/workflows/release.yml
-          fi
-          if ! git diff --quiet; then
-            git add src/licensing/pro-access-service.ts .github/workflows/release.yml
-            git commit -m "chore(sync): reapply free edition policy"
-          fi
+          rm -f .github/workflows/release.yml
 
-      - name: Push synced main
-        run: git push origin main
+          git add -A
+          git diff --cached --check
+          git commit --no-edit --message "chore(sync): sync upstream and reapply free edition policy"
+          git push origin main
+          rm -rf "$backup"
