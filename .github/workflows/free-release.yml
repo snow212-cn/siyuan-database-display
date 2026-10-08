@@ -1,0 +1,87 @@
+name: Free Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: free-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.6.0
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare build configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .license
+          openssl genpkey -algorithm Ed25519 | openssl pkey -pubout -out .license/pro-license-public.pem
+          printf "%s\n" '{"trialDays":1,"webhookUrl":"https://example.invalid/"}' > .license/trial-config.json
+
+      - name: Build for production
+        run: pnpm build
+
+      - name: Read plugin version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p 'require("./plugin.json").version')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create or verify release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="free-v${{ steps.version.outputs.version }}"
+          current="$(git rev-parse HEAD)"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
+            tagged="$(git rev-list -n 1 "refs/tags/$tag")"
+            if [ "$tagged" != "$current" ]; then
+              echo "Release tag $tag already points to $tagged, not $current." >&2
+              exit 1
+            fi
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "$tag"
+            git push origin "$tag"
+          fi
+
+      - name: Publish GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          artifactErrorsFailBuild: true
+          artifacts: "package.zip"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: false
+          tag: free-v${{ steps.version.outputs.version }}
