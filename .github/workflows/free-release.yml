@@ -77,7 +77,6 @@ jobs:
       - name: Publish GitHub Release
         if: steps.tag.outputs.exists != 'true'
         uses: ncipollo/release-action@v1
-        uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
           artifactErrorsFailBuild: true
