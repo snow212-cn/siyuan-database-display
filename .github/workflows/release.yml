@@ -64,11 +64,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="v${{ steps.version.outputs.version }}"
+          tag="free-v${{ steps.version.outputs.version }}"
           git tag -a "$tag" -m "$tag"
           git push origin "$tag"
 
       - name: Publish GitHub Release
+        if: steps.tag.outputs.exists != 'true'
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
