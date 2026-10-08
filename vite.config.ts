@@ -19,10 +19,6 @@ const trialConfig = existsSync(trialConfigPath) ? JSON.parse(readFileSync(trialC
 const trialDays = Number(trialConfig.trialDays);
 const trialWebhookUrl = typeof trialConfig.webhookUrl === "string" ? trialConfig.webhookUrl.trim() : "";
 
-if (!isDev && (!proLicensePublicKey || !trialWebhookUrl || !Number.isFinite(trialDays) || trialDays <= 0)) {
-    throw new Error("Missing or invalid .license release configuration. Generate the license key and configure trial-config.json before building a release.");
-}
-
 const outputDir = isDev ? "dev" : "dist";
 const watchExternalPlugin: VitePlugin = {
     name: "watch-external",

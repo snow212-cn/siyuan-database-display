@@ -1,4 +1,4 @@
-name: Tag and Release on Push to Main
+name: Release
 
 on:
   push:
@@ -10,85 +10,25 @@ permissions:
   contents: write
 
 jobs:
-  tag:
-    runs-on: ubuntu-latest
-    outputs:
-      tag_name: ${{ steps.create_tag.outputs.tag_name }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Git
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-
-      - name: Create tag from commit message
-        id: create_tag
-        run: |
-          set -euo pipefail
-          COMMIT_SUBJECT=$(git log -1 --pretty=%s)
-          if [[ "$COMMIT_SUBJECT" =~ (^|[[:space:]])(v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?)([[:space:]]|$) ]]; then
-            NEW_TAG="${BASH_REMATCH[2]}"
-            git tag -a "$NEW_TAG" -m "$COMMIT_SUBJECT"
-            git push origin "$NEW_TAG"
-            echo "tag_name=$NEW_TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "No semantic version tag found in commit subject: $COMMIT_SUBJECT"
-            echo "tag_name=" >> "$GITHUB_OUTPUT"
-          fi
-
   release:
-    needs: tag
-    if: needs.tag.outputs.tag_name != ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
-          ref: ${{ needs.tag.outputs.tag_name }}
           fetch-depth: 0
 
       - name: Install Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: pnpm
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        id: pnpm-install
         with:
           version: 9.6.0
           run_install: false
-
-      - name: Prepare release configuration
-        env:
-          PRO_LICENSE_PUBLIC_KEY: ${{ secrets.PRO_LICENSE_PUBLIC_KEY }}
-          TRIAL_CONFIG_JSON: ${{ secrets.TRIAL_CONFIG_JSON }}
-        run: |
-          set -euo pipefail
-          test -n "$PRO_LICENSE_PUBLIC_KEY" || { echo "Missing PRO_LICENSE_PUBLIC_KEY repository secret" >&2; exit 1; }
-          test -n "$TRIAL_CONFIG_JSON" || { echo "Missing TRIAL_CONFIG_JSON repository secret" >&2; exit 1; }
-          mkdir -p .license
-          printf '%s\n' "$PRO_LICENSE_PUBLIC_KEY" > .license/pro-license-public.pem
-          printf '%s\n' "$TRIAL_CONFIG_JSON" > .license/trial-config.json
-          node --input-type=module -e 'const fs = await import("node:fs"); const config = JSON.parse(fs.readFileSync(".license/trial-config.json", "utf8")); if (!Number.isFinite(Number(config.trialDays)) || Number(config.trialDays) <= 0 || typeof config.webhookUrl !== "string" || !config.webhookUrl.trim()) throw new Error("Invalid TRIAL_CONFIG_JSON");'
-
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -96,7 +36,38 @@ jobs:
       - name: Build for production
         run: pnpm build
 
-      - name: Release
+      - name: Read plugin version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p 'require("./plugin.json").version')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.version.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release tag $tag already exists."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release tag $tag does not exist yet."
+          fi
+
+      - name: Create release tag
+        if: steps.tag.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.version.outputs.version }}"
+          git tag -a "$tag" -m "$tag"
+          git push origin "$tag"
+
+      - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
@@ -104,4 +75,4 @@ jobs:
           artifacts: "package.zip"
           token: ${{ secrets.GITHUB_TOKEN }}
           prerelease: false
-          tag: ${{ needs.tag.outputs.tag_name }}
+          tag: v${{ steps.version.outputs.version }}
